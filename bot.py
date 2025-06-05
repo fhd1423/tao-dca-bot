@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
+from functools import wraps
 
 import bittensor as bt
 from supabase import create_client, Client
@@ -24,6 +25,38 @@ load_dotenv()
 
 # Conversation states
 SUBNET_ID, AMOUNT, TOTAL_AMOUNT, FREQUENCY, CUSTOM_HOURS = range(5)
+
+# Authorized users for DCA creation (usernames without @)
+AUTHORIZED_CREATORS = {
+    'mattslater',
+    'fhd1466'
+}
+
+def dca_creation_only(func):
+    """Decorator to restrict DCA creation commands to authorized users only."""
+    @wraps(func)
+    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user = update.effective_user
+        username = user.username.lower() if user.username else None
+        
+        # Check if user is authorized for DCA creation
+        if username not in AUTHORIZED_CREATORS:
+            await update.message.reply_text(
+                "🚫 **DCA Creation Restricted**\n\n"
+                "DCA order creation is restricted to authorized users only.\n"
+                f"Your username: @{username if username else 'none'}\n\n"
+                "You can still use other bot commands like /list, /balance, and /help.\n"
+                "If you believe this is an error, please contact the bot administrator.",
+                parse_mode='Markdown'
+            )
+            print(f"🚫 Unauthorized DCA creation attempt from user: @{username if username else 'none'} (ID: {user.id})")
+            return ConversationHandler.END if 'ConversationHandler' in str(type(self)) else None
+        
+        # User is authorized, proceed with the original function
+        print(f"✅ Authorized user @{username} (ID: {user.id}) accessing DCA creation: {func.__name__}")
+        return await func(self, update, context, *args, **kwargs)
+    
+    return wrapper
 
 class SimpleDCABot:
     def __init__(self):
@@ -177,6 +210,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         """
         await update.message.reply_text(help_text, parse_mode='Markdown')
     
+    @dca_creation_only
     async def create_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start DCA order creation conversation."""
         await update.message.reply_text(
@@ -186,6 +220,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         )
         return SUBNET_ID
     
+    @dca_creation_only
     async def get_subnet_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get subnet ID from user."""
         try:
@@ -206,6 +241,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             await update.message.reply_text("❌ Please enter a valid number for subnet ID:")
             return SUBNET_ID
     
+    @dca_creation_only
     async def get_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get TAO amount from user."""
         try:
@@ -227,6 +263,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             await update.message.reply_text("❌ Please enter a valid number for the amount:")
             return AMOUNT
     
+    @dca_creation_only
     async def get_total_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get total amount from user."""
         try:
@@ -276,6 +313,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             await update.message.reply_text("❌ Please enter a valid number for the total amount:")
             return TOTAL_AMOUNT
     
+    @dca_creation_only
     async def get_frequency(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get frequency from user and create the DCA order or ask for custom hours."""
         query = update.callback_query
@@ -299,6 +337,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         frequency_minutes = int(query.data)
         return await self.create_dca_order(update, context, frequency_minutes)
     
+    @dca_creation_only
     async def get_custom_hours(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get custom hourly frequency from user."""
         try:
@@ -308,7 +347,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                     "❌ Please enter a number between 1 and 23 hours:"
                 )
                 return CUSTOM_HOURS
-            
+                
             # Convert hours to minutes
             frequency_minutes = hours * 60
             return await self.create_dca_order(update, context, frequency_minutes)
@@ -801,4 +840,4 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped by user")
     except Exception as e:
         print(f"❌ Fatal error: {e}")
-        exit(1) 
+        exit(1)
