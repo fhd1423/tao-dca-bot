@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  tao-dca-bot:
+    build: .
+    container_name: tao-dca-bot
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      # Optional: Mount logs directory if you want persistent logs
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Uncomment the following if you want to expose any ports (not needed for this bot)
+    # ports:
+    #   - "8000:8000"
