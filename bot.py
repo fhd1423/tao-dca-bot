@@ -216,13 +216,22 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         await update.message.reply_text(
             "🎯 Let's create your DCA order!\n\n"
             "First, which subnet would you like to invest in?\n"
-            "Enter the subnet ID (e.g., 1 for subnet 1):"
+            "Enter the subnet ID (e.g., 1 for subnet 1):\n\n"
+            "💡 *Tip: Type 'exit' anytime to cancel order creation*"
         )
         return SUBNET_ID
     
     @dca_creation_only
     async def get_subnet_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get subnet ID from user."""
+        user_input = update.message.text.strip().lower()
+        
+        # Check if user wants to exit
+        if user_input == "exit":
+            await update.message.reply_text("❌ Order creation cancelled.")
+            context.user_data.clear()
+            return ConversationHandler.END
+        
         try:
             subnet_id = int(update.message.text.strip())
             if subnet_id < 0:
@@ -233,7 +242,8 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             await update.message.reply_text(
                 f"✅ Subnet ID: {subnet_id}\n\n"
                 "💰 How much TAO would you like to invest per execution?\n"
-                "Enter the amount (e.g., 0.1, 1.5, 10):"
+                "Enter the amount (e.g., 0.1, 1.5, 10):\n\n"
+                "💡 *Tip: Type 'exit' to cancel order creation*"
             )
             return AMOUNT
             
@@ -244,6 +254,14 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     @dca_creation_only
     async def get_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get TAO amount from user."""
+        user_input = update.message.text.strip().lower()
+        
+        # Check if user wants to exit
+        if user_input == "exit":
+            await update.message.reply_text("❌ Order creation cancelled.")
+            context.user_data.clear()
+            return ConversationHandler.END
+        
         try:
             amount = float(update.message.text.strip())
             if amount <= 0:
@@ -255,7 +273,8 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             await update.message.reply_text(
                 f"✅ Amount per buy: {amount} TAO\n\n"
                 "💰 What's your total DCA budget (total amount to spend)?\n"
-                "Enter the total amount (e.g., 10, 50, 100):"
+                "Enter the total amount (e.g., 10, 50, 100):\n\n"
+                "💡 *Tip: Type 'exit' to cancel order creation*"
             )
             return TOTAL_AMOUNT
             
@@ -266,6 +285,14 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     @dca_creation_only
     async def get_total_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get total amount from user."""
+        user_input = update.message.text.strip().lower()
+        
+        # Check if user wants to exit
+        if user_input == "exit":
+            await update.message.reply_text("❌ Order creation cancelled.")
+            context.user_data.clear()
+            return ConversationHandler.END
+        
         try:
             total_amount = float(update.message.text.strip())
             if total_amount <= 0:
@@ -340,11 +367,20 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     @dca_creation_only
     async def get_custom_hours(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get custom hourly frequency from user."""
+        user_input = update.message.text.strip().lower()
+        
+        # Check if user wants to exit
+        if user_input == "exit":
+            await update.message.reply_text("❌ Order creation cancelled.")
+            context.user_data.clear()
+            return ConversationHandler.END
+        
         try:
             hours = int(update.message.text.strip())
             if hours < 1 or hours > 23:
                 await update.message.reply_text(
-                    "❌ Please enter a number between 1 and 23 hours:"
+                    "❌ Please enter a number between 1 and 23 hours:\n\n"
+                    "💡 *Tip: Type 'exit' to cancel order creation*"
                 )
                 return CUSTOM_HOURS
                 
@@ -354,7 +390,8 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             
         except ValueError:
             await update.message.reply_text(
-                "❌ Please enter a valid number between 1 and 23:"
+                "❌ Please enter a valid number between 1 and 23:\n\n"
+                "💡 *Tip: Type 'exit' to cancel order creation*"
             )
             return CUSTOM_HOURS
     
@@ -774,6 +811,11 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                     print(f"Retrying in 5 seconds...")
                     await asyncio.sleep(5)
                 else:
+                    # All attempts failed - deactivate order in one place
+                    self.supabase.table('dca_orders').update({
+                        'is_active': False
+                    }).eq('id', order['id']).execute()
+                    print(f"Order {order['id']} deactivated after all retry attempts failed: {error_msg}")
                     return False, error_msg, None
         
         return False, "All retry attempts failed", None
