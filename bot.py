@@ -124,9 +124,12 @@ class SimpleDCABot:
         self.app.add_handler(CommandHandler("cancel", self.cancel_cmd))
         self.app.add_handler(CommandHandler("balance", self.balance_cmd))
         
-        # DCA order creation conversation
+        # DCA order creation conversation (handles both buy and sell)
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("create", self.create_cmd)],
+            entry_points=[
+                CommandHandler("create", self.create_cmd),
+                CommandHandler("sell", self.sell_cmd)
+            ],
             states={
                 SUBNET_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.get_subnet_id)],
                 AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.get_amount)],
@@ -176,18 +179,29 @@ class SimpleDCABot:
         help_text = """
 🤖 **Bittensor DCA Bot Commands**
 
-📊 `/create` - Create a new DCA order
+📊 `/create` - Create a new DCA buy order (stake TAO)
+💰 `/sell` - Create a new DCA sell order (unstake alpha tokens)
 📋 `/list` - View your active DCA orders with progress  
 ❌ `/cancel <order_id>` - Cancel a specific order
 💰 `/balance` - Check bot wallet balance
 ❓ `/help` - Show this help message
 
 **How DCA works:**
-Dollar Cost Averaging (DCA) automatically purchases TAO at regular intervals, helping to reduce the impact of volatility over time.
+Dollar Cost Averaging (DCA) automatically executes transactions at regular intervals, helping to reduce the impact of volatility over time.
+
+**Buy Orders (Staking):**
+• Purchase and stake TAO to validators
+• Converts TAO to alpha tokens
+• Helps build your subnet positions
+
+**Sell Orders (Unstaking):**
+• Sell alpha tokens back to TAO
+• Automatically unstakes from top validators
+• Helps you take profits or rebalance
 
 **Order Setup:**
-• Choose a subnet to invest in
-• Set amount per purchase (e.g., 1 TAO each time)
+• Choose a subnet to trade in
+• Set amount per transaction (e.g., 1 TAO each time)
 • Set total budget (e.g., 100 TAO total)
 • Choose frequency from comprehensive options
 • Order stops automatically when total budget is reached
@@ -205,16 +219,19 @@ Dollar Cost Averaging (DCA) automatically purchases TAO at regular intervals, he
 • Daily - Traditional DCA approach
 • Weekly - Long-term accumulation
 
-**Example:**
-Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
+**Examples:**
+• Buy: Stake 1 TAO every 6 hours until you've spent 50 TAO total
+• Sell: Unstake 1 Alpha every day until you've unstaked 20 Alpha total
         """
         await update.message.reply_text(help_text, parse_mode='Markdown')
     
     @dca_creation_only
     async def create_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Start DCA order creation conversation."""
+        """Start DCA buy order creation conversation."""
+        context.user_data['order_type'] = 'buy'
         await update.message.reply_text(
-            "🎯 Let's create your DCA order!\n\n"
+            "🎯 Let's create your DCA buy order!\n\n"
+            "This will create a recurring order to buy (stake) TAO.\n\n"
             "First, which subnet would you like to invest in?\n"
             "Enter the subnet ID (e.g., 1 for subnet 1):\n\n"
             "💡 *Tip: Type 'exit' anytime to cancel order creation*"
@@ -225,6 +242,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     async def get_subnet_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get subnet ID from user."""
         user_input = update.message.text.strip().lower()
+        order_type = context.user_data.get('order_type', 'buy')
         
         # Check if user wants to exit
         if user_input == "exit":
@@ -239,12 +257,24 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                 return SUBNET_ID
             
             context.user_data['subnet_id'] = subnet_id
-            await update.message.reply_text(
-                f"✅ Subnet ID: {subnet_id}\n\n"
-                "💰 How much TAO would you like to invest per execution?\n"
-                "Enter the amount (e.g., 0.1, 1.5, 10):\n\n"
-                "💡 *Tip: Type 'exit' to cancel order creation*"
-            )
+            
+            if order_type == 'buy':
+                message = (
+                    f"✅ Subnet ID: {subnet_id}\n\n"
+                    "💰 How much TAO would you like to invest per execution?\n"
+                    "Enter the amount (e.g., 0.1, 1.5, 10):\n\n"
+                    "💡 *Tip: Type 'exit' to cancel order creation*"
+                )
+            else:  # sell
+                message = (
+                    f"✅ Subnet ID: {subnet_id}\n\n"
+                    "💰 How many Alpha tokens would you like to unstake per execution?\n"
+                    "Enter the amount in Alpha (e.g., 0.1, 1.5, 10):\n\n"
+                    "💡 *Note: Alpha tokens represent your staked position*\n"
+                    "💡 *Tip: Type 'exit' to cancel order creation*"
+                )
+            
+            await update.message.reply_text(message)
             return AMOUNT
             
         except ValueError:
@@ -255,6 +285,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     async def get_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get TAO amount from user."""
         user_input = update.message.text.strip().lower()
+        order_type = context.user_data.get('order_type', 'buy')
         
         # Check if user wants to exit
         if user_input == "exit":
@@ -270,12 +301,22 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             
             context.user_data['amount'] = amount
             
-            await update.message.reply_text(
-                f"✅ Amount per buy: {amount} TAO\n\n"
-                "💰 What's your total DCA budget (total amount to spend)?\n"
-                "Enter the total amount (e.g., 10, 50, 100):\n\n"
-                "💡 *Tip: Type 'exit' to cancel order creation*"
-            )
+            if order_type == 'buy':
+                message = (
+                    f"✅ Amount per buy: {amount} TAO\n\n"
+                    "💰 What's your total DCA budget (total amount to spend)?\n"
+                    "Enter the total amount (e.g., 10, 50, 100):\n\n"
+                    "💡 *Tip: Type 'exit' to cancel order creation*"
+                )
+            else:  # sell
+                message = (
+                    f"✅ Amount per unstake: {amount} Alpha\n\n"
+                    "💰 What's your total unstaking budget?\n"
+                    "Enter the total amount in Alpha (e.g., 10, 50, 100):\n\n"
+                    "💡 *Tip: Type 'exit' to cancel order creation*"
+                )
+            
+            await update.message.reply_text(message)
             return TOTAL_AMOUNT
             
         except ValueError:
@@ -286,6 +327,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
     async def get_total_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Get total amount from user."""
         user_input = update.message.text.strip().lower()
+        order_type = context.user_data.get('order_type', 'buy')
         
         # Check if user wants to exit
         if user_input == "exit":
@@ -302,38 +344,48 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             context.user_data['total_amount'] = total_amount
             
             # Create comprehensive frequency selection keyboard
+            prefix = f"{order_type}_" if order_type == 'sell' else ""
             keyboard = [
                 # Minute intervals
                 [
-                    InlineKeyboardButton("⚡ 1 min", callback_data="1"),
-                    InlineKeyboardButton("⏱️ 5 min", callback_data="5"),
-                    InlineKeyboardButton("⏰ 15 min", callback_data="15"),
-                    InlineKeyboardButton("🕐 30 min", callback_data="30")
+                    InlineKeyboardButton("⚡ 1 min", callback_data=f"{prefix}1"),
+                    InlineKeyboardButton("⏱️ 5 min", callback_data=f"{prefix}5"),
+                    InlineKeyboardButton("⏰ 15 min", callback_data=f"{prefix}15"),
+                    InlineKeyboardButton("🕐 30 min", callback_data=f"{prefix}30")
                 ],
                 # Hourly option
                 [
-                    InlineKeyboardButton("🕒 Hourly (1-23h)", callback_data="hourly")
+                    InlineKeyboardButton("🕒 Hourly (1-23h)", callback_data=f"{prefix}hourly")
                 ],
                 # Daily and Weekly
                 [
-                    InlineKeyboardButton("📅 Daily", callback_data="1440"),
-                    InlineKeyboardButton("📊 Weekly", callback_data="10080")
+                    InlineKeyboardButton("📅 Daily", callback_data=f"{prefix}1440"),
+                    InlineKeyboardButton("📊 Weekly", callback_data=f"{prefix}10080")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(
-                f"✅ Total Amount: {total_amount} TAO\n\n"
-                "⏰ How often would you like to execute this DCA order?\n\n"
+            if order_type == 'buy':
+                message = (
+                    f"✅ Total Amount: {total_amount} TAO\n\n"
+                    "⏰ How often would you like to execute this DCA order?\n\n"
+                )
+            else:  # sell
+                message = (
+                    f"✅ Total Unstaking Budget: {total_amount} Alpha\n\n"
+                    "⏰ How often would you like to execute this DCA sell order?\n\n"
+                )
+            
+            message += (
                 "**Quick Options:**\n"
                 "• **Minutes**: 1, 5, 15, 30 minute intervals\n"
                 "• **Hourly**: Any interval from 1-23 hours\n" 
                 "• **Daily**: Every 24 hours\n"
                 "• **Weekly**: Every 7 days\n\n"
-                "Choose your preferred frequency:",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                "Choose your preferred frequency:"
             )
+            
+            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             return FREQUENCY
             
         except ValueError:
@@ -346,11 +398,14 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         query = update.callback_query
         await query.answer()
         
+        order_type = context.user_data.get('order_type', 'buy')
+        
         # Handle hourly custom selection
-        if query.data == "hourly":
+        if query.data in ["hourly", "sell_hourly"]:
+            action_text = "sell execution" if order_type == 'sell' else "DCA execution"
             await query.edit_message_text(
                 "🕒 **Custom Hourly Frequency**\n\n"
-                "Please enter the number of hours between each DCA execution.\n\n"
+                f"Please enter the number of hours between each {action_text}.\n\n"
                 "**Examples:**\n"
                 "• `2` = Every 2 hours\n"
                 "• `6` = Every 6 hours  \n"
@@ -361,7 +416,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             return CUSTOM_HOURS
         
         # Handle direct frequency selection
-        frequency_minutes = int(query.data)
+        frequency_minutes = int(query.data.replace('sell_', ''))
         return await self.create_dca_order(update, context, frequency_minutes)
     
     @dca_creation_only
@@ -404,6 +459,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
         subnet_id = context.user_data['subnet_id']
         amount = context.user_data['amount']
         total_amount = context.user_data['total_amount']
+        order_type = context.user_data.get('order_type', 'buy')
         
         try:
             # Calculate next run time
@@ -419,36 +475,41 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                 'total_amount_tao': total_amount,
                 'total_spent_tao': 0.0,
                 'frequency_minutes': frequency_minutes,
-                'next_run': next_run.isoformat()
+                'next_run': next_run.isoformat(),
+                'order_type': order_type
             }).execute()
             
             order_id = result.data[0]['id']
             
+            # Create success message based on order type
+            if order_type == 'buy':
+                title = "🎉 **DCA Buy Order Created Successfully!**"
+                type_desc = "📈 **Type:** Buy (Stake TAO)"
+                amount_desc = f"💰 **Amount:** {amount} TAO per execution"
+                budget_desc = f"💰 **Total Budget:** {total_amount} TAO"
+            else:  # sell
+                title = "🎉 **DCA Sell Order Created Successfully!**"
+                type_desc = "📉 **Type:** Sell (Unstake Alpha)"
+                amount_desc = f"💰 **Amount:** {amount} Alpha per execution"
+                budget_desc = f"💰 **Total Budget:** {total_amount} Alpha"
+            
+            success_message = (
+                f"{title}\n\n"
+                f"📊 **Order ID:** {order_id}\n"
+                f"🎯 **Subnet:** {subnet_id}\n"
+                f"{type_desc}\n"
+                f"{amount_desc}\n"
+                f"{budget_desc}\n"
+                f"⏰ **Frequency:** {frequency_text}\n"
+                f"🚀 **Next Execution:** {next_run.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"Your DCA order is now active! Use /list to view all your orders."
+            )
+            
             # Determine if this is a callback query or regular message
             if hasattr(update, 'callback_query') and update.callback_query:
-                await update.callback_query.edit_message_text(
-                    f"🎉 **DCA Order Created Successfully!**\n\n"
-                    f"📊 **Order ID:** {order_id}\n"
-                    f"🎯 **Subnet:** {subnet_id}\n"
-                    f"💰 **Amount:** {amount} TAO per execution\n"
-                    f"💰 **Total Budget:** {total_amount} TAO\n"
-                    f"⏰ **Frequency:** {frequency_text}\n"
-                    f"🚀 **Next Execution:** {next_run.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"Your DCA order is now active! Use /list to view all your orders.",
-                    parse_mode='Markdown'
-                )
+                await update.callback_query.edit_message_text(success_message, parse_mode='Markdown')
             else:
-                await update.message.reply_text(
-                    f"🎉 **DCA Order Created Successfully!**\n\n"
-                    f"📊 **Order ID:** {order_id}\n"
-                    f"🎯 **Subnet:** {subnet_id}\n"
-                    f"💰 **Amount:** {amount} TAO per execution\n"
-                    f"💰 **Total Budget:** {total_amount} TAO\n"
-                    f"⏰ **Frequency:** {frequency_text}\n"
-                    f"🚀 **Next Execution:** {next_run.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"Your DCA order is now active! Use /list to view all your orders.",
-                    parse_mode='Markdown'
-                )
+                await update.message.reply_text(success_message, parse_mode='Markdown')
             
         except Exception as e:
             error_msg = f"❌ Error creating DCA order: {str(e)}"
@@ -484,6 +545,19 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             else:
                 return f"Every {days} days"
     
+    @dca_creation_only
+    async def sell_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Start DCA sell order creation conversation."""
+        context.user_data['order_type'] = 'sell'
+        await update.message.reply_text(
+            "📉 Let's create your DCA sell order!\n\n"
+            "This will create a recurring order to unstake your Alpha tokens.\n\n"
+            "First, which subnet would you like to sell from?\n"
+            "Enter the subnet ID (e.g., 1 for subnet 1):\n\n"
+            "💡 *Tip: Type 'exit' anytime to cancel order creation*"
+        )
+        return SUBNET_ID
+    
     async def cancel_conversation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Cancel the conversation."""
         await update.message.reply_text("❌ Order creation cancelled.")
@@ -508,6 +582,7 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
             for order in result.data:
                 frequency_minutes = order['frequency_minutes']
                 frequency_text = self.get_frequency_display_text(frequency_minutes)
+                order_type = order.get('order_type', 'buy')
                 
                 next_run = datetime.fromisoformat(order['next_run'].replace('Z', '+00:00'))
                 
@@ -521,14 +596,31 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                 progress_bars = int(progress_percent / 10)  # 10 bars total
                 progress_bar = "█" * progress_bars + "░" * (10 - progress_bars)
                 
+                # Set display text based on order type
+                if order_type == 'buy':
+                    type_emoji = "📈"
+                    type_text = "Buy (Stake)"
+                    amount_text = f"💰 **Amount per buy:** {order['amount_tao']} TAO"
+                    budget_text = f"💰 **Total budget:** {total_amount} TAO"
+                    spent_text = f"💸 **Spent:** {total_spent:.4f} TAO"
+                    remaining_text = f"💵 **Remaining:** {remaining:.4f} TAO"
+                else:  # sell
+                    type_emoji = "📉"
+                    type_text = "Sell (Unstake)"
+                    amount_text = f"💰 **Amount per sell:** {order['amount_tao']} Alpha"
+                    budget_text = f"💰 **Total budget:** {total_amount} Alpha"
+                    spent_text = f"💸 **Sold:** {total_spent:.4f} Alpha"
+                    remaining_text = f"💵 **Remaining:** {remaining:.4f} Alpha"
+                
                 message += (
                     f"🆔 **ID:** {order['id']}\n"
                     f"🎯 **Subnet:** {order['subnet_id']}\n"
-                    f"💰 **Amount per buy:** {order['amount_tao']} TAO\n"
-                    f"💰 **Total budget:** {total_amount} TAO\n"
+                    f"{type_emoji} **Type:** {type_text}\n"
+                    f"{amount_text}\n"
+                    f"{budget_text}\n"
                     f"📊 **Progress:** {progress_bar} {progress_percent:.1f}%\n"
-                    f"💸 **Spent:** {total_spent:.4f} TAO\n"
-                    f"💵 **Remaining:** {remaining:.4f} TAO\n"
+                    f"{spent_text}\n"
+                    f"{remaining_text}\n"
                     f"⏰ **Frequency:** {frequency_text}\n"
                     f"🚀 **Next Run:** {next_run.strftime('%Y-%m-%d %H:%M:%S')}\n"
                     f"📅 **Created:** {datetime.fromisoformat(order['created_at'].replace('Z', '+00:00')).strftime('%Y-%m-%d')}\n\n"
@@ -651,8 +743,8 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                 
                 print(f"🎯 Executing order {order['id']} (scheduled at {scheduled_at})")
                 
-                # Execute the DCA purchase
-                success, error_msg, tx_hash = await self.execute_dca_purchase(order)
+                # Execute the DCA operation (buy or sell)
+                success, error_msg, tx_hash = await self.execute_dca_operation(order)
                 
                 # Log execution
                 self.supabase.table('execution_history').insert({
@@ -712,9 +804,23 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                     sleep_duration = 60
                 await asyncio.sleep(sleep_duration)
 
-    async def execute_dca_purchase(self, order: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[str]]:
+    async def execute_dca_operation(self, order: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[str]]:
         """
-        Execute a DCA purchase by staking TAO to the top validator in the subnet.
+        Execute a DCA operation (buy or sell) based on the order type.
+        
+        Returns:
+            tuple: (success: bool, error_message: str, transaction_hash: str)
+        """
+        order_type = order.get('order_type', 'buy')
+        
+        if order_type == 'buy':
+            return await self.execute_buy_operation(order)
+        else:  # sell
+            return await self.execute_sell_operation(order)
+    
+    async def execute_buy_operation(self, order: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[str]]:
+        """
+        Execute a DCA buy operation by staking TAO to the top validator in the subnet.
         
         Returns:
             tuple: (success: bool, error_message: str, transaction_hash: str)
@@ -816,6 +922,131 @@ Create an order to buy 1 TAO every 6 hours until you've spent 50 TAO total.
                         'is_active': False
                     }).eq('id', order['id']).execute()
                     print(f"Order {order['id']} deactivated after all retry attempts failed: {error_msg}")
+                    return False, error_msg, None
+        
+        return False, "All retry attempts failed", None
+    
+    async def execute_sell_operation(self, order: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[str]]:
+        """
+        Execute a DCA sell operation by unstaking alpha tokens from the top validator in the subnet.
+        
+        Returns:
+            tuple: (success: bool, error_message: str, transaction_hash: str)
+        """
+        max_retries = 3
+        
+        # Check if order has reached its total amount cap
+        total_spent = float(order.get('total_spent_tao', 0))
+        total_amount = float(order['total_amount_tao'])
+        amount_per_sell = float(order['amount_tao'])
+        
+        if total_spent >= total_amount:
+            # Order has reached its cap, deactivate it
+            self.supabase.table('dca_orders').update({
+                'is_active': False
+            }).eq('id', order['id']).execute()
+            print(f"Sell order {order['id']} has reached its total amount cap ({total_amount} Alpha). Deactivating.")
+            return False, f"Order completed - reached total amount cap of {total_amount} Alpha", None
+        
+        # Check if this sale would exceed the total amount
+        if total_spent + amount_per_sell > total_amount:
+            # Adjust the sale amount to not exceed the cap
+            amount_per_sell = total_amount - total_spent
+            if amount_per_sell <= 0.0001:  # Minimum practical amount
+                self.supabase.table('dca_orders').update({
+                    'is_active': False
+                }).eq('id', order['id']).execute()
+                print(f"Sell order {order['id']} completed - remaining amount too small ({amount_per_sell:.6f} Alpha)")
+                return False, f"Order completed - remaining budget too small", None
+        
+        for attempt in range(max_retries):
+            try:
+                amount_alpha = Decimal(str(amount_per_sell))
+                subnet_id = order['subnet_id']
+                print(f"Executing DCA sell: {amount_alpha} Alpha from subnet {subnet_id} (attempt {attempt + 1}/{max_retries})")
+                print(f"Progress: {total_spent:.4f}/{total_amount} Alpha sold")
+                
+                # Use AsyncSubtensor for async operations
+                async with bt.AsyncSubtensor(os.getenv('BT_NETWORK', 'finney')) as subtensor:
+                    # Get metagraph to fetch validator hotkeys dynamically
+                    print(f"Fetching metagraph for subnet {subnet_id}...")
+                    metagraph = await subtensor.metagraph(netuid=subnet_id)
+                    
+                    # Get validators with stake from our wallet
+                    validators_with_stake = []
+                    our_coldkey = self.wallet.coldkey.ss58_address
+                    
+                    for uid, neuron in enumerate(metagraph.neurons):
+                        if neuron.validator_permit:
+                            # Check if we have stake with this validator
+                            stake_amount = await subtensor.get_stake(
+                                coldkey_ss58=our_coldkey,
+                                hotkey_ss58=neuron.hotkey,
+                                netuid=subnet_id
+                            )
+                            if stake_amount > 0:
+                                validators_with_stake.append((uid, neuron.hotkey, stake_amount))
+                    
+                    if not validators_with_stake:
+                        return False, f"No staked validators found in subnet {subnet_id}", None
+                    
+                    # Select the validator with the most stake from our wallet
+                    top_validator = max(validators_with_stake, key=lambda x: x[2])
+                    validator_uid, validator_hotkey_ss58, our_stake = top_validator
+                    
+                    print(f"Selected validator UID {validator_uid} with hotkey: {validator_hotkey_ss58}")
+                    print(f"Our stake with this validator: {our_stake} TAO")
+                    
+                    # Check if we have enough stake to sell (our_stake is in TAO, amount_alpha is alpha amount we want to unstake)
+                    if our_stake < amount_alpha:
+                        print(f"Insufficient stake: have {our_stake} TAO, need {amount_alpha} Alpha")
+                        return False, f"Insufficient stake: have {our_stake} TAO, need {amount_alpha} Alpha", None
+                    
+                    print(f"Unstaking {amount_alpha} Alpha from subnet {subnet_id}...")
+                    
+                    # Execute the unstake transaction
+                    result = await subtensor.unstake(
+                        wallet=self.wallet,
+                        hotkey_ss58=validator_hotkey_ss58,
+                        netuid=subnet_id,
+                        amount=bt.Balance.from_rao(float(amount_alpha)),
+                        wait_for_inclusion=True,
+                        wait_for_finalization=True
+                    )
+                    
+                    if result is True:
+                        print("✅ Unstake successful!")
+                        
+                        # Update total spent amount
+                        new_total_spent = total_spent + float(amount_alpha)
+                        update_data = {'total_spent_tao': new_total_spent}
+                        
+                        # Check if order is now complete
+                        if new_total_spent >= total_amount:
+                            update_data['is_active'] = False
+                            print(f"Sell order {order['id']} completed! Total sold: {new_total_spent}/{total_amount} Alpha")
+                        
+                        self.supabase.table('dca_orders').update(update_data).eq('id', order['id']).execute()
+                        
+                        return True, None, "success"
+                    else:
+                        print(f"❌ Unstake failed - Result: {result}")
+                        return False, f"Unstake operation failed: {result}", None
+                    
+            except Exception as e:
+                error_msg = f"Unstaking error: {str(e)}"
+                print(f"Attempt {attempt + 1} failed: {error_msg}")
+                
+                # Retry with delay if not last attempt
+                if attempt < max_retries - 1:
+                    print(f"Retrying in 5 seconds...")
+                    await asyncio.sleep(5)
+                else:
+                    # All attempts failed - deactivate order
+                    self.supabase.table('dca_orders').update({
+                        'is_active': False
+                    }).eq('id', order['id']).execute()
+                    print(f"Sell order {order['id']} deactivated after all retry attempts failed: {error_msg}")
                     return False, error_msg, None
         
         return False, "All retry attempts failed", None

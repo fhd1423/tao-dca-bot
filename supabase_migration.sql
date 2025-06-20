@@ -9,6 +9,10 @@ ADD COLUMN total_amount_tao DECIMAL(10,6) DEFAULT 0.0;
 ALTER TABLE dca_orders 
 ADD COLUMN total_spent_tao DECIMAL(10,6) DEFAULT 0.0;
 
+-- Add order_type column to support both buy and sell orders
+ALTER TABLE dca_orders 
+ADD COLUMN order_type VARCHAR(10) DEFAULT 'buy' CHECK (order_type IN ('buy', 'sell'));
+
 -- Update existing orders to set total_amount_tao equal to amount_tao for backwards compatibility
 -- This assumes existing orders should run indefinitely, so we set a high total amount
 UPDATE dca_orders 
