@@ -906,7 +906,8 @@ Dollar Cost Averaging (DCA) automatically executes transactions at regular inter
                         return True, None, "success"
                     else:
                         print(f"❌ Stake failed - Result: {result}")
-                        return False, f"Stake operation failed: {result}", None
+                        # Don't return immediately - let retry logic handle this
+                        raise Exception(f"Stake operation failed: {result}")
                     
             except Exception as e:
                 error_msg = f"Staking error: {str(e)}"
@@ -1031,7 +1032,8 @@ Dollar Cost Averaging (DCA) automatically executes transactions at regular inter
                         return True, None, "success"
                     else:
                         print(f"❌ Unstake failed - Result: {result}")
-                        return False, f"Unstake operation failed: {result}", None
+                        # Don't return immediately - let retry logic handle this
+                        raise Exception(f"Unstake operation failed: {result}")
                     
             except Exception as e:
                 error_msg = f"Unstaking error: {str(e)}"
