@@ -989,7 +989,12 @@ Dollar Cost Averaging (DCA) automatically executes transactions at regular inter
                                 validators_with_stake.append((uid, neuron.hotkey, stake_amount))
                     
                     if not validators_with_stake:
-                        return False, f"No staked validators found in subnet {subnet_id}", None
+                        # No staked validators is a permanent condition - deactivate order immediately
+                        self.supabase.table('dca_orders').update({
+                            'is_active': False
+                        }).eq('id', order['id']).execute()
+                        print(f"Sell order {order['id']} deactivated - no staked validators found in subnet {subnet_id}")
+                        return False, f"Order deactivated - no staked validators found in subnet {subnet_id}", None
                     
                     # Select the validator with the most stake from our wallet
                     top_validator = max(validators_with_stake, key=lambda x: x[2])
@@ -1001,7 +1006,12 @@ Dollar Cost Averaging (DCA) automatically executes transactions at regular inter
                     # Check if we have enough stake to sell (our_stake is in TAO, amount_alpha is alpha amount we want to unstake)
                     if our_stake < amount_alpha:
                         print(f"Insufficient stake: have {our_stake} TAO, need {amount_alpha} Alpha")
-                        return False, f"Insufficient stake: have {our_stake} TAO, need {amount_alpha} Alpha", None
+                        # Insufficient stake is likely a permanent condition - deactivate order
+                        self.supabase.table('dca_orders').update({
+                            'is_active': False
+                        }).eq('id', order['id']).execute()
+                        print(f"Sell order {order['id']} deactivated - insufficient stake")
+                        return False, f"Order deactivated - insufficient stake: have {our_stake} TAO, need {amount_alpha} Alpha", None
                     
                     print(f"Unstaking {amount_alpha} Alpha from subnet {subnet_id}...")
                     
